@@ -1,0 +1,97 @@
+{
+	"patcher" : 	{
+		"fileversion" : 1,
+		"appversion" : 		{
+			"major" : 8,
+			"minor" : 0,
+			"revision" : 6,
+			"architecture" : "x64",
+			"modernui" : 1
+		}
+,
+		"classnamespace" : "dsp.gen",
+		"rect" : [ 44.0, 87.0, 1197.0, 909.0 ],
+		"bglocked" : 0,
+		"openinpresentation" : 0,
+		"default_fontsize" : 12.0,
+		"default_fontface" : 0,
+		"default_fontname" : "Arial",
+		"gridonopen" : 1,
+		"gridsize" : [ 15.0, 15.0 ],
+		"gridsnaponopen" : 1,
+		"objectsnaponopen" : 1,
+		"statusbarvisible" : 2,
+		"toolbarvisible" : 1,
+		"lefttoolbarpinned" : 0,
+		"toptoolbarpinned" : 0,
+		"righttoolbarpinned" : 0,
+		"bottomtoolbarpinned" : 0,
+		"toolbars_unpinned_last_save" : 0,
+		"tallnewobj" : 0,
+		"boxanimatetime" : 200,
+		"enablehscroll" : 1,
+		"enablevscroll" : 1,
+		"devicewidth" : 0.0,
+		"description" : "",
+		"digest" : "",
+		"tags" : "",
+		"style" : "",
+		"subpatcher_template" : "",
+		"boxes" : [ 			{
+				"box" : 				{
+					"id" : "obj-1",
+					"maxclass" : "newobj",
+					"numinlets" : 0,
+					"numoutlets" : 1,
+					"outlettype" : [ "" ],
+					"patching_rect" : [ 50.0, 14.0, 30.0, 22.0 ],
+					"text" : "in 1"
+				}
+
+			}
+, 			{
+				"box" : 				{
+					"id" : "obj-4",
+					"maxclass" : "newobj",
+					"numinlets" : 1,
+					"numoutlets" : 0,
+					"patching_rect" : [ 50.0, 859.0, 37.0, 22.0 ],
+					"text" : "out 1"
+				}
+
+			}
+, 			{
+				"box" : 				{
+					"code" : "//——————————Some helper functions------------// \r\nrand(clipper) {\n\tclippedNoise = scale(noise(), -1, 1, 0, clipper);\n\treturn clippedNoise;\n}\r\n\r\ncalculateSampleSize(bufferName, recordingStart, recordingEnd) {\n  soundSize = 0;\n\n  if (recordingStart > recordingEnd) {\r\n\tzeroToStart = dim(bufferName) - recordingStart;\n    soundSize = zeroToStart + recordingEnd;\n  } else {\n    soundSize = recordingEnd - recordingStart;\n  }\n\n  return soundSize;\n}\r\n\n//——————————Declare some \"global\" vars------------// \nBuffer bufferName(\"bufferName\");\r\nBuffer IO(\"IO\");\nBuffer window(\"window\");\nData storage(100, 6);\r\nHistory spacer(0);\n\nParam grainSizeMS(250, min=0, max=1000);\nParam numberGrains(10, min=1, max=100);\nParam startOffsetMS(0, min=0, max=1000);\nParam startVariance(0.1, min=0);\nParam endVariance(0.1, min=0);\nParam ampVariance(0.9, min=0, max=1);\r\nParam grainSpacer(1000, min=0, max=SAMPLERATE);\n//Param grainSpeed(1, min=0.01, max=10);\r\n\r\n//read the IO buffer for start and stop times\r\nsampleStart  = peek(IO, 0, mc_channel - 1);\r\nsampleEnd    = peek(IO, 1, mc_channel - 1);\r\nsampleLength = calculateSampleSize(bufferName, sampleStart, sampleEnd);\n\r\n//convert some params to samps\r\ngrainSizeSamps   = mstosamps(grainSizeMS);\r\nstartOffsetSamps = mstosamps(startOffsetMS);\r\n\r\n\r\n//——————————Generate and instiantiate the needed data for the grains.------------// \r\nbufferLen = dim(bufferName);\ngrainTrig = in1;\r\ngrainTrigChange = change(grainTrig);\r\n\r\n// if the input is 1, attempt to create a new grain\nif (grainTrig == 1) {\r\n\t\r\n\tfor (i = 0; i < numberGrains; i += 1) { //calculate each grain\r\n\t\t\r\n\t\t//Check if this grain is active or not. \r\n\t\tgrainStatus = peek(storage, i, 0);\r\n\t\t//If the granulator was just turned on, set each grain to active (1) or non-active (-1)\r\n\t\tif (grainTrigChange == 1) {\r\n\t\t\tpoke(storage, -1, i, 0);\r\n\t\t\tgrainStatus = -1;\r\n\t\t\tspacer=0;\r\n\t\t} else if (grainChangeTrig == -1) {\r\n\t\t\t//do nothing for now\r\n\t\t}\n\t\t\r\n\t\t//If the grain doesn't exist. grainSpacer ensures all grains don't start at the same time\n\t\tif (grainStatus == -1 && spacer >= i*grainSpacer) {\n\n\t\t\tstartAdder = sampleStart * rand(startVariance); \n\t\t\tendAdder   = sampleEnd * rand(endVariance); \n\t\t\tstart      = wrap(sampleStart + startAdder + startOffsetSamps, 0, bufferLen);\n\t\t\tend        = start + grainSizeSamps + endAdder; \n\t\t\tampRand    = 1 - abs(rand(ampVariance)); \r\n\t\t\t\n\t\t\t// store 5 values in the log;\n\t\t\tpoke(storage, start / bufferLen, i, 0); // current (start) buffer index between 0 and 1. This channel will be accumulated upon.\n\t\t\tpoke(storage, 1 / bufferLen, i, 1);     // step value between 0 and 1. Used for both sample and buffer\n\t\t\tpoke(storage, 0, i, 2);                 // keep track of the window. This channel will be accumulated upon.\n\t\t\tpoke(storage, 1 / (end-start), i, 3);   // the inc amount for the window to match the grain size\r\n\t\t\tpoke(storage, ampRand, i, 4);           // generate the amplitude for the grain\n\t\t}\r\n\t\t\n\t}\r\n\t\r\n\t//no need to keep the spacer count going forever.\r\n\tif(spacer > numberGrains*grainSpacer) {\r\n\t\tspacer = spacer;\r\n\t} else {\r\n\t\tspacer += 1;\r\n\t}\n}\r\n\n//——————————Make sound------------// \r\n//since each iteration of the loop represents a grain, this value will have the aggregate of all grain by the end of the loop\ngrainSum = 0;\nfor (i = 0; i < numberGrains; i += 1) {\n\n\tbufPos = peek(storage, i, 0); // current buffer READ phase of grain. Also serves as a flag for active/non-active\n\tbufInc = peek(storage, i, 1); // next buffer phase\r\n\t\n\tif (bufPos > -1) { // whenever position is not equal to zero means this log represents an active grain\n\r\n\t\twindowPos = peek(storage, i, 2);\r\n\t\twindowInc = peek(storage, i, 3);\r\n\t\tamp       = peek(storage, i, 4);\r\n\t\t\n\t\t//sample the buffers\n\t\tcurrentSample = sample(bufferName, bufPos, mc_channel - 1); // current buffer SAMPLE position of grain\n\t\tcurrentWindow = sample(window, windowPos); // ^^ of window\n\t\t\r\n\t\t//calculate the grain with windowing and random amp\n\t\tgrainSum = grainSum + ((currentSample * currentWindow) * amp);\n\t\t\r\n\t\t//Get things ready for next time\n\t\tnextPos     = bufPos + bufInc; // get the bufPos value for the next round\r\n\t\tnextPosWrap = wrap(nextPos, 0, 1);\n\t\tnextWin     = windowInc + windowPos; // get the winPos value...\r\n\t\t\n\t\t// test the updated position against the end point. Use the window to know if we're done with the grain\n\t\tif (windowPos < 0.99) { \n\t\t\tpoke(storage, nextPosWrap, i, 0); // if the grain is not finshed, store it so the next SAMPLE we remember where we were\n\t\t\tpoke(storage, nextWin, i, 2);\n\t\t}\r\n\t\telse {\r\n\t\t\tpoke(storage, -1, i, 0); //set tthe grain to -1 so we can make a new grain on that channel\r\n\t\t}\r\n\t\t\r\n\t\tif(i==3){\r\n\t\t\tout2=1;\r\n\t\t}\n\t}\n}\n\nout1 = grainSum;",
+					"fontface" : 0,
+					"fontname" : "<Monospaced>",
+					"fontsize" : 12.0,
+					"id" : "obj-99",
+					"maxclass" : "codebox",
+					"numinlets" : 1,
+					"numoutlets" : 2,
+					"outlettype" : [ "", "" ],
+					"patching_rect" : [ 50.0, 67.0, 1076.0, 753.799987999999985 ]
+				}
+
+			}
+ ],
+		"lines" : [ 			{
+				"patchline" : 				{
+					"destination" : [ "obj-99", 0 ],
+					"source" : [ "obj-1", 0 ]
+				}
+
+			}
+, 			{
+				"patchline" : 				{
+					"destination" : [ "obj-4", 0 ],
+					"source" : [ "obj-99", 0 ]
+				}
+
+			}
+ ],
+		"autosave" : 0
+	}
+
+}
